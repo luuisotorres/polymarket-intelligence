@@ -1,0 +1,54 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.uv/
+
+# Database
+*.db
+polymarket.db
+
+# Node.js
+node_modules/
+dist/
+.npm
+
+# Build
+build/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Debug scripts
+inspect_clob.py
+
+# Packaged skills (keep source in .agent/skills/)
+*.skill
