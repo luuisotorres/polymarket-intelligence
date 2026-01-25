@@ -138,6 +138,11 @@ flowchart TD
 | `HOST` | Backend server host | `0.0.0.0` |
 | `PORT` | Backend server port | `8000` |
 | `DEBUG` | Enable debug mode | `true` |
+| `POLYMARKET_API_KEY` | Polymarket API Key | Required for trading/auth |
+| `POLYMARKET_SECRET` | Polymarket API Secret | Required for trading/auth |
+| `POLYMARKET_PASSPHRASE`| Polymarket API Passphrase | Required for trading/auth |
+| `GEMINI_API_KEY` | Google Gemini API Key | Required for AI Debate |
+| `TAVILY_API_KEY` | Tavily Search API Key | Required for AI Debate |
 
 ## API Reference
 
