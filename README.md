@@ -87,12 +87,12 @@ Comprehensive price statistics including:
 
 ### January 25, 2026
 
-#### 🔍 Search via Market News
+#### Search via Market News
 Users can now search for markets directly using the market slug or keywords to find relevant news and financial data.
 
 ![Search Slug](assets/screenshots/search-slug.png)
 
-#### 🤖 AI Debate Floor
+#### AI Debate Floor
 Introducing a multi-agent AI debate system where specialized agents analyze the market from different perspectives before reaching a final verdict.
 
 ![AI Debate Floor](assets/screenshots/ai-debate-floor.png)
