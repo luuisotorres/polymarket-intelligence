@@ -128,9 +128,32 @@ class PolymarketClient:
         except httpx.HTTPError as e:
             logger.error(f"HTTP error fetching markets: {e}")
             raise
-        except Exception as e:
             logger.error(f"Error fetching markets: {e}")
             raise
+
+    async def get_market_by_slug(self, slug: str) -> MarketResponse | None:
+        """
+        Fetch a single market by slug.
+
+        Args:
+            slug: The market slug.
+
+        Returns:
+            Market response or None if not found.
+        """
+        client = await self._get_client()
+        try:
+            response = await client.get(MARKETS_ENDPOINT, params={"slug": slug})
+            response.raise_for_status()
+            data = response.json()
+
+            if isinstance(data, list) and len(data) > 0:
+                return MarketResponse.model_validate(data[0])
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching market by slug {slug}: {e}")
+            return None
 
     async def get_top_markets_by_volume(self, limit: int = 100) -> list[dict]:
         """

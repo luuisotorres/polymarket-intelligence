@@ -12,11 +12,10 @@ declare global {
 
 function getInterval(timeframe: Timeframe): string {
     switch (timeframe) {
-        case '1H': return '60'
-        case '4H': return '240'
-        case '1D': return 'D'
-        case '1W': return 'W'
-        case '1M': return 'M'
+        case '24H': return '30'
+        case '7D': return '240'
+        case '1M': return 'D'
+        case 'ALL': return 'D'
         default: return 'D'
     }
 }

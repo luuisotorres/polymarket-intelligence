@@ -7,6 +7,7 @@ import { WhaleList } from './components/WhaleList'
 import { TopHolders } from './components/TopHolders'
 import { PriceMovement } from './components/PriceMovement'
 import { TimeframeSelector } from './components/TimeframeSelector'
+import { SearchBar } from './components/SearchBar'
 import { useMarketStore } from './stores/marketStore'
 
 function App() {
@@ -17,7 +18,7 @@ function App() {
         <div className="min-h-screen bg-surface-950">
             {/* Header */}
             <header className="glass border-b border-white/10 sticky top-0 z-50">
-                <div className="max-w-[1920px] mx-auto px-4 py-4">
+                <div className="max-w-[1920px] mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl bg-primary-600 shadow-lg shadow-primary-900/20">
                             <TrendingUp className="w-6 h-6 text-white" />
@@ -30,6 +31,10 @@ function App() {
                                 Real-time markets & news
                             </p>
                         </div>
+                    </div>
+
+                    <div className="flex-1 flex justify-end">
+                        <SearchBar />
                     </div>
                 </div>
             </header>

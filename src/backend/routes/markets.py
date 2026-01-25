@@ -551,6 +551,94 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)) -> Mark
         result = await db.execute(select(Market).where(Market.slug == market_id))
         market = result.scalar_one_or_none()
 
+    # If still not found in DB, try fetching from API (assuming market_id might be a slug)
+    if not market:
+        # We need to fetch from API
+        try:
+            api_market = await polymarket_client.get_market_by_slug(market_id)
+            if api_market:
+                # Map API response to MarketOut
+                # Logic similar to get_top_markets_by_volume processing
+                
+                # Parse yes percentage
+                yes_percentage = 50.0
+                if api_market.outcome_prices:
+                    try:
+                        prices = json.loads(api_market.outcome_prices)
+                        if prices and len(prices) > 0:
+                            price_val = float(prices[0])
+                            if 0 <= price_val <= 1:
+                                yes_percentage = price_val * 100
+                    except Exception:
+                        pass
+                
+                # Parse end date
+                end_date = None
+                if api_market.end_date_iso:
+                    try:
+                        date_str = api_market.end_date_iso
+                        if "T" in date_str:
+                            end_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                        else:
+                            end_date = datetime.fromisoformat(date_str)
+                    except Exception:
+                        pass
+
+                # Parse volumes
+                    volume_24h_val = api_market.volume_24hr or api_market.volume_num or 0.0
+                volume_7d_val = api_market.volume_1wk or api_market.volume_num or 0.0
+                if volume_7d_val == 0 and volume_24h_val > 0:
+                    volume_7d_val = volume_24h_val
+                
+                liquidity_val = api_market.liquidity_num or 0.0
+
+                # Create Market model instance
+                new_market = Market(
+                    id=api_market.condition_id or api_market.id,
+                    slug=api_market.slug or api_market.market_slug or market_id,
+                    title=api_market.question,
+                    description=api_market.description,
+                    volume_24h=volume_24h_val,
+                    volume_7d=volume_7d_val,
+                    liquidity=liquidity_val,
+                    yes_percentage=round(yes_percentage, 2),
+                    is_active=api_market.active and not api_market.closed,
+                    end_date=end_date,
+                    image_url=api_market.image or api_market.icon,
+                    clob_token_ids=api_market.clob_token_ids,
+                    last_updated=datetime.utcnow()
+                )
+
+                # Save to database so subsequent calls (history, stats) work
+                try:
+                    db.add(new_market)
+                    await db.commit()
+                    await db.refresh(new_market)
+                    market = new_market
+                    logger.info(f"Saved fallback market to DB: {new_market.slug}")
+                except Exception as db_err:
+                    logger.error(f"Failed to save fallback market to DB: {db_err}")
+                    # Continue returning the object even if save fails, though history endpoints will still fail
+                    # Using the model object for consistency if save succeeded, or constructing MarketOut manually if failed
+                    if not market:
+                         return MarketOut(
+                            id=api_market.condition_id or api_market.id,
+                            slug=api_market.slug or api_market.market_slug or market_id,
+                            title=api_market.question,
+                            description=api_market.description,
+                            volume_24h=volume_24h_val,
+                            volume_7d=volume_7d_val,
+                            liquidity=liquidity_val,
+                            yes_percentage=round(yes_percentage, 2),
+                            is_active=api_market.active and not api_market.closed,
+                            end_date=end_date,
+                            image_url=api_market.image or api_market.icon,
+                            clob_token_ids=api_market.clob_token_ids,
+                            last_updated=datetime.utcnow()
+                        )
+        except Exception as e:
+            logger.error(f"Error serving market from API fallback: {e}")
+
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
 

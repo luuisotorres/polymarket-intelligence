@@ -52,7 +52,7 @@ export default function PriceChart() {
         if (seriesRef.current && chartRef.current) {
             try {
                 chartRef.current.removeSeries(seriesRef.current)
-            } catch (e) {
+            } catch {
                 // Series may already be removed
             }
             seriesRef.current = null
