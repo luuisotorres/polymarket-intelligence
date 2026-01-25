@@ -8,11 +8,13 @@ import { TopHolders } from './components/TopHolders'
 import { PriceMovement } from './components/PriceMovement'
 import { TimeframeSelector } from './components/TimeframeSelector'
 import { SearchBar } from './components/SearchBar'
+import DebateFloor from './components/DebateFloor'
 import { useMarketStore } from './stores/marketStore'
+import { MessageSquare } from 'lucide-react'
 
 function App() {
     const { selectedMarket } = useMarketStore()
-    const [activeTab, setActiveTab] = useState<'news' | 'whales' | 'holders' | 'stats'>('news')
+    const [activeTab, setActiveTab] = useState<'news' | 'whales' | 'holders' | 'stats' | 'debate'>('news')
 
     return (
         <div className="min-h-screen bg-surface-950">
@@ -141,12 +143,27 @@ function App() {
                                         <div className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-purple-400 rounded-full" />
                                     )}
                                 </button>
+
+                                <div className="w-px h-4 bg-white/10 shrink-0" />
+
+                                <button
+                                    onClick={() => setActiveTab('debate')}
+                                    className={`flex items-center gap-2 px-2 py-1 relative transition-colors whitespace-nowrap ${activeTab === 'debate' ? 'text-white' : 'text-surface-400 hover:text-surface-200'
+                                        }`}
+                                >
+                                    <MessageSquare className={`w-5 h-5 ${activeTab === 'debate' ? 'text-blue-400' : 'opacity-70'}`} />
+                                    <span className="font-semibold">Debate Floor</span>
+                                    {activeTab === 'debate' && (
+                                        <div className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-blue-400 rounded-full" />
+                                    )}
+                                </button>
                             </div>
 
                             {activeTab === 'news' && <NewsFeed />}
                             {activeTab === 'whales' && <WhaleList />}
                             {activeTab === 'holders' && <TopHolders />}
                             {activeTab === 'stats' && <PriceMovement />}
+                            {activeTab === 'debate' && <DebateFloor marketId={selectedMarket?.id || null} />}
                         </section>
                     </div>
                 </div>

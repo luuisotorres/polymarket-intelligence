@@ -25,4 +25,4 @@ echo "   API docs: http://localhost:8000/docs"
 echo ""
 
 # Run the server
-uv run uvicorn src.backend.main:app --reload --host 0.0.0.0 --port 8000
+exec uv run uvicorn src.backend.main:app --reload --host 0.0.0.0 --port 8000

@@ -639,8 +639,44 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)) -> Mark
         except Exception as e:
             logger.error(f"Error serving market from API fallback: {e}")
 
-    if not market:
-        raise HTTPException(status_code=404, detail="Market not found")
+    # Always try to fetch fresh data from API for individual market view
+    try:
+        api_market = await polymarket_client.get_market_by_slug(market.slug or market_id)
+        if api_market:
+            # Parse yes percentage
+            yes_percentage = 50.0
+            if api_market.outcome_prices:
+                try:
+                    prices = json.loads(api_market.outcome_prices)
+                    if prices and len(prices) > 0:
+                        price_val = float(prices[0])
+                        if 0 <= price_val <= 1:
+                            yes_percentage = price_val * 100
+                except Exception:
+                    pass
+            
+            # Parse volumes
+            volume_24h_val = api_market.volume_24hr or api_market.volume_num or 0.0
+            volume_7d_val = api_market.volume_1wk or api_market.volume_num or 0.0
+            if volume_7d_val == 0 and volume_24h_val > 0:
+                 volume_7d_val = volume_24h_val
+            
+            liquidity_val = api_market.liquidity_num or 0.0
+
+            # Update DB record
+            market.yes_percentage = round(yes_percentage, 2)
+            market.volume_24h = volume_24h_val
+            market.volume_7d = volume_7d_val
+            market.liquidity = liquidity_val
+            market.last_updated = datetime.utcnow()
+            
+            # Commit updates
+            await db.commit()
+            await db.refresh(market)
+            logger.info(f"Refreshed market data for {market.slug}: {market.yes_percentage}%")
+            
+    except Exception as e:
+        logger.warning(f"Failed to refresh market data from API (using cached): {e}")
 
     return MarketOut.model_validate(market)
 

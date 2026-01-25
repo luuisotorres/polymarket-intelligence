@@ -31,4 +31,4 @@ echo "🔧 Starting Vite dev server on http://localhost:5173"
 echo ""
 
 # Run the dev server
-npm run dev
+exec npm run dev

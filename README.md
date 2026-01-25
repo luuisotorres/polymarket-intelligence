@@ -10,6 +10,8 @@ Real-time market tracking dashboard for Polymarket with live price charts, news 
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
+![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat&logo=langchain&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?style=flat&logo=langchain&logoColor=white)
 
 ## Quick Start
 
@@ -80,6 +82,32 @@ Comprehensive price statistics including:
 - High/low ranges for each period
 - Volume analysis
 - Bullish/Bearish trading signals based on momentum, trend, range position, and volume
+
+## Updates
+
+### January 25, 2026
+
+#### 🔍 Search via Market News
+Users can now search for markets directly using the market slug or keywords to find relevant news and financial data.
+
+![Search Slug](assets/screenshots/search-slug.png)
+
+#### 🤖 AI Debate Floor
+Introducing a multi-agent AI debate system where specialized agents analyze the market from different perspectives before reaching a final verdict.
+
+![AI Debate Floor](assets/screenshots/ai-debate-floor.png)
+
+**How it works:**
+
+```mermaid
+flowchart TD
+    Start([User Query]) --> Stats[Statistics Expert]
+    Stats --> Gen[Generalist Expert]
+    Gen --> Macro[Crypto/Macro Analyst]
+    Macro --> Devil[Devil's Advocate]
+    Devil --> Mod[Moderator]
+    Mod --> End([Final Verdict])
+```
 
 ## Architecture
 
@@ -185,6 +213,8 @@ Polymarket-News-Tracker/
 - **APScheduler** - Background task scheduling
 - **httpx** - Async HTTP client
 - **py-clob-client** - Polymarket CLOB API client
+- **LangChain** - LLM Orchestration
+- **LangGraph** - Stateful Multi-Agent Workflows
 
 ### Frontend
 - **React 18** - Component-based UI library
