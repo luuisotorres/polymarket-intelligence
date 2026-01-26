@@ -1,4 +1,4 @@
-# Polymarket News Tracker
+# Polymarket Intelligence
 
 Real-time market tracking dashboard for Polymarket with live price charts, news feeds, whale order tracking, and price movement analysis.
 
@@ -25,14 +25,14 @@ Real-time market tracking dashboard for Polymarket with live price charts, news 
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/luuisotorres/Polymarket-News-Tracker.git
-   cd Polymarket-News-Tracker
+   git clone https://github.com/luuisotorres/polymarket-intelligence.git
+   cd polymarket-intelligence
    ```
 
 2. Set up environment variables
    ```bash
    cp .env.example .env
-   # Edit .env with your NEWS_API_KEY from https://newsapi.org
+   # Edit .env with your API keys
    ```
 
 3. Start both servers
