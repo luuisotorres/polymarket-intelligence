@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.uv/
+
+# Node.js - use ** to match anywhere in the tree
+**/node_modules/
+**/dist/
+**/build/
+*.log
+
+# Environment and secrets
+.env
+.env.*
+
+# Database
+polymarket.db
+*.db
+
+# IDE and editor
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Docker (don't need to copy docker files into context)
+.dockerignore
+docker-compose.yml
+Dockerfile.*
+
+# Project-specific exclusions
+.agent/
+assets/
+scripts/
+skill-creator/
+*.skill
+AGENTS.md
+
+# Duplicate lock files
+**/package-lock 2.json

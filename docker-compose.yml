@@ -1,0 +1,33 @@
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    image: polymarket-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - polymarket_db:/app?polymarket.db
+    ports:
+      - "8000:8000"
+    networks:
+      - pnet
+
+  frontend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: polymarket-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    networks:
+      - pnet
+
+volumes:
+  polymarket_db:
+
+networks:
+  pnet:
+    driver: bridge
