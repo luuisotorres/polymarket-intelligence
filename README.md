@@ -12,6 +12,7 @@ Real-time market tracking dashboard for Polymarket with live price charts, news 
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 ![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat&logo=langchain&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?style=flat&logo=langchain&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 
 ## Quick Start
 
@@ -51,6 +52,20 @@ Real-time market tracking dashboard for Polymarket with live price charts, news 
 
 4. Open http://localhost:5173
 
+### Quick Start with Docker
+
+Alternatively, run the entire stack with Docker:
+
+```bash
+# Build and start containers
+docker compose up --build
+
+# Or run in detached mode
+docker compose up -d --build
+```
+
+Access the app at http://localhost:5173 (frontend) and http://localhost:8000 (backend API).
+
 ## Features
 
 ### Top 100 Markets Dashboard
@@ -84,6 +99,13 @@ Comprehensive price statistics including:
 - Bullish/Bearish trading signals based on momentum, trend, range position, and volume
 
 ## Updates
+
+### January 29, 2026
+
+#### Docker Containerization
+The application is now fully containerized with Docker. Run the entire stack (FastAPI backend + React frontend with nginx) using a single `docker compose up --build` command. This simplifies deployment and ensures consistent environments across development and production.
+
+---
 
 ### January 25, 2026
 
