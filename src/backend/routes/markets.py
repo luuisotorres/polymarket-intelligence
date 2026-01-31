@@ -585,7 +585,7 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)) -> Mark
                         pass
 
                 # Parse volumes
-                    volume_24h_val = api_market.volume_24hr or api_market.volume_num or 0.0
+                volume_24h_val = api_market.volume_24hr or api_market.volume_num or 0.0
                 volume_7d_val = api_market.volume_1wk or api_market.volume_num or 0.0
                 if volume_7d_val == 0 and volume_24h_val > 0:
                     volume_7d_val = volume_24h_val
@@ -638,6 +638,10 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)) -> Mark
                         )
         except Exception as e:
             logger.error(f"Error serving market from API fallback: {e}")
+
+    # If still no market found, return 404
+    if not market:
+        raise HTTPException(status_code=404, detail="Market not found")
 
     # Always try to fetch fresh data from API for individual market view
     try:

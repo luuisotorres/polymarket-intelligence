@@ -7,15 +7,55 @@ interface DebateMessage {
     content: string;
 }
 
+interface AgentConfig {
+    statistics_expert: boolean;
+    generalist_expert: boolean;
+    devils_advocate: boolean;
+    crypto_macro_analyst: boolean;
+}
+
 interface DebateResponse {
     market_id: string;
     messages: DebateMessage[];
     verdict: string;
+    enabled_agents: string[];
 }
 
 interface DebateFloorProps {
     marketId: string | null;
 }
+
+/** Agent metadata for display and configuration. */
+const AGENTS = [
+    {
+        key: 'statistics_expert' as keyof AgentConfig,
+        label: 'Statistics Expert',
+        emoji: '📊',
+        color: 'blue',
+        description: 'Analyzes price, volume, and probability'
+    },
+    {
+        key: 'generalist_expert' as keyof AgentConfig,
+        label: 'Generalist Expert',
+        emoji: '🌍',
+        color: 'green',
+        description: 'Searches for latest news and events'
+    },
+    {
+        key: 'crypto_macro_analyst' as keyof AgentConfig,
+        label: 'Crypto/Macro Analyst',
+        emoji: '📈',
+        color: 'yellow',
+        description: 'Provides macro and crypto context'
+    },
+    {
+        key: 'devils_advocate' as keyof AgentConfig,
+        label: "Devil's Advocate",
+        emoji: '😈',
+        color: 'red',
+        description: 'Challenges the consensus view'
+    },
+];
 
 const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
     const [messages, setMessages] = useState<DebateMessage[]>([]);
@@ -23,7 +63,24 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Agent toggle state
+    const [agentConfig, setAgentConfig] = useState<AgentConfig>({
+        statistics_expert: true,
+        generalist_expert: true,
+        devils_advocate: true,
+        crypto_macro_analyst: true,
+    });
+
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+    const toggleAgent = (agentKey: keyof AgentConfig) => {
+        setAgentConfig(prev => ({
+            ...prev,
+            [agentKey]: !prev[agentKey]
+        }));
+    };
+
+    const enabledCount = Object.values(agentConfig).filter(Boolean).length;
 
     const initiateDebate = async () => {
         if (!marketId) return;
@@ -36,6 +93,12 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/debate/${marketId}`, {
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    agents: agentConfig
+                }),
             });
 
             if (!response.ok) {
@@ -79,6 +142,65 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                 </button>
             </div>
 
+            {/* Agent Toggle Panel */}
+            <div className="p-4 bg-gray-800/40 border border-gray-700/50 rounded-2xl backdrop-blur-sm">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+                        Active Agents
+                    </h3>
+                    <span className="text-xs text-gray-500">
+                        {enabledCount}/4 enabled • Moderator always active
+                    </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {AGENTS.map(agent => {
+                        const isEnabled = agentConfig[agent.key];
+                        const colorMap: Record<string, { bg: string; border: string; text: string }> = {
+                            blue: { bg: 'bg-blue-500', border: 'border-blue-500/50', text: 'text-blue-400' },
+                            green: { bg: 'bg-green-500', border: 'border-green-500/50', text: 'text-green-400' },
+                            yellow: { bg: 'bg-yellow-500', border: 'border-yellow-500/50', text: 'text-yellow-400' },
+                            red: { bg: 'bg-red-500', border: 'border-red-500/50', text: 'text-red-400' },
+                        };
+                        const colorClasses = colorMap[agent.color] ?? colorMap.blue;
+
+                        return (
+                            <button
+                                key={agent.key}
+                                onClick={() => toggleAgent(agent.key)}
+                                disabled={isLoading}
+                                className={`
+                                    p-3 rounded-xl border transition-all duration-300 text-left
+                                    ${isEnabled
+                                        ? `${colorClasses.border} bg-gray-900/50`
+                                        : 'border-gray-700/30 bg-gray-900/20 opacity-50'
+                                    }
+                                    ${isLoading ? 'cursor-not-allowed' : 'hover:scale-[1.02] cursor-pointer'}
+                                `}
+                            >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-lg">{agent.emoji}</span>
+                                    <div className={`
+                                        w-8 h-4 rounded-full transition-all duration-300 relative
+                                        ${isEnabled ? colorClasses.bg : 'bg-gray-600'}
+                                    `}>
+                                        <div className={`
+                                            absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all duration-300
+                                            ${isEnabled ? 'left-4' : 'left-0.5'}
+                                        `} />
+                                    </div>
+                                </div>
+                                <p className={`text-xs font-medium ${isEnabled ? colorClasses.text : 'text-gray-500'}`}>
+                                    {agent.label}
+                                </p>
+                                <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">
+                                    {agent.description}
+                                </p>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             {error && (
                 <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400">
                     {error}
@@ -88,7 +210,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
             {!isLoading && messages.length === 0 && !error && (
                 <div className="text-center py-12 text-gray-400 bg-gray-800/30 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
                     <p className="text-lg">Click "Initiate Debate" to summon the experts.</p>
-                    <p className="text-sm mt-2 opacity-60">Cost-effective analysis on demand.</p>
+                    <p className="text-sm mt-2 opacity-60">Toggle agents above to save tokens.</p>
                 </div>
             )}
 
@@ -99,7 +221,6 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         <span className="text-2xl">⚖️</span> Final Verdict
                     </h3>
                     <div className="prose prose-invert max-w-none text-gray-200">
-                        {/* Markdown rendering */}
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {verdict}
                         </ReactMarkdown>
@@ -120,7 +241,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                                     ? 'bg-red-900/20 border-red-500/30 ml-8 mr-4'
                                     : msg.agent === 'Crypto/Macro Analyst'
                                         ? 'bg-yellow-900/20 border-yellow-500/30 ml-12 mr-0'
-                                        : 'bg-gray-800/40 border-gray-600/30 mx-6' // Moderator or others
+                                        : 'bg-gray-800/40 border-gray-600/30 mx-6'
                             }`}
                         style={{ animationDelay: `${idx * 0.1}s` }}
                     >
@@ -143,9 +264,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         </div>
                         <div className="text-gray-300 leading-relaxed text-sm">
                             <div className="prose prose-invert max-w-none prose-sm prose-p:my-1 prose-headings:my-2 prose-ul:my-1">
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                >
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {msg.content}
                                 </ReactMarkdown>
                             </div>
