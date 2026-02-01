@@ -100,6 +100,13 @@ Comprehensive price statistics including:
 
 ## Updates
 
+### February 1, 2026
+
+#### Time Decay & Resolution Analyst
+Implemented a new specialized agent for the AI Debate Floor: the **Time Decay & Resolution Analyst**. This agent focuses on the temporal dynamics of prediction markets, calculating time-to-resolution, theta decay factors, and urgency classifications to provide strategic timing recommendations.
+
+---
+
 ### January 29, 2026
 
 #### Docker Containerization
@@ -124,7 +131,8 @@ Introducing a multi-agent AI debate system where specialized agents analyze the 
 ```mermaid
 flowchart TD
     Start([User Query]) --> Stats[Statistics Expert]
-    Stats --> Gen[Generalist Expert]
+    Stats --> Time[Time Decay Analyst]
+    Time --> Gen[Generalist Expert]
     Gen --> Macro[Crypto/Macro Analyst]
     Macro --> Devil[Devil's Advocate]
     Devil --> Mod[Moderator]

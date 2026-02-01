@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useCallback } from 'react'
 import { createChart, AreaSeries, IChartApi, ISeriesApi, UTCTimestamp, ColorType } from 'lightweight-charts'
 import { usePriceHistory } from '../hooks/usePriceHistory'
-import { useMarketStore } from '../stores/marketStore'
+import { useMarketStore, ShareType } from '../stores/marketStore'
 import { Loader2, TrendingUp, TrendingDown } from 'lucide-react'
 
 interface ChartDataPoint {
@@ -9,12 +9,46 @@ interface ChartDataPoint {
     value: number
 }
 
+/**
+ * ShareTypeToggle - A sleek toggle component for switching between Yes and No shares.
+ */
+function ShareTypeToggle({
+    value,
+    onChange,
+}: {
+    value: ShareType
+    onChange: (type: ShareType) => void
+}) {
+    return (
+        <div className="flex items-center gap-1 p-1 bg-surface-800 rounded-lg">
+            <button
+                onClick={() => onChange('Yes')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${value === 'Yes'
+                        ? 'bg-green-500/20 text-green-400 shadow-sm'
+                        : 'text-surface-400 hover:text-surface-200'
+                    }`}
+            >
+                Yes
+            </button>
+            <button
+                onClick={() => onChange('No')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${value === 'No'
+                        ? 'bg-red-500/20 text-red-400 shadow-sm'
+                        : 'text-surface-400 hover:text-surface-200'
+                    }`}
+            >
+                No
+            </button>
+        </div>
+    )
+}
+
 export default function PriceChart() {
     const chartContainerRef = useRef<HTMLDivElement>(null)
     const chartRef = useRef<IChartApi | null>(null)
     const seriesRef = useRef<ISeriesApi<'Area'> | null>(null)
 
-    const { selectedMarket, selectedTimeframe } = useMarketStore()
+    const { selectedMarket, selectedTimeframe, selectedShareType, setSelectedShareType } = useMarketStore()
     const { data, isLoading, error } = usePriceHistory(
         selectedMarket?.id || null,
         selectedTimeframe
@@ -25,9 +59,10 @@ export default function PriceChart() {
             return { chartData: null, priceChange: null }
         }
 
+        const isYes = selectedShareType === 'Yes'
         const points: ChartDataPoint[] = data.history.map((p) => ({
             time: (new Date(p.timestamp).getTime() / 1000) as UTCTimestamp,
-            value: p.yes_percentage,
+            value: isYes ? p.yes_percentage : p.no_percentage,
         }))
 
         // Sort by time (required by lightweight-charts)
@@ -45,7 +80,7 @@ export default function PriceChart() {
                 current: last,
             },
         }
-    }, [data])
+    }, [data, selectedShareType])
 
     // Cleanup chart on unmount or when market changes
     const cleanupChart = useCallback(() => {
@@ -116,11 +151,26 @@ export default function PriceChart() {
 
         chartRef.current = chart
 
-        // Add series with appropriate colors
+        // Determine colors based on share type and price change
+        const isYes = selectedShareType === 'Yes'
         const isPositive = priceChange?.isPositive ?? true
-        const lineColor = isPositive ? '#10b981' : '#ef4444'
-        const topColor = isPositive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'
-        const bottomColor = isPositive ? 'rgba(16, 185, 129, 0.0)' : 'rgba(239, 68, 68, 0.0)'
+
+        // For Yes shares: green when positive, red when negative
+        // For No shares: red when positive (No gaining), darker red when negative
+        let lineColor: string
+        let topColor: string
+        let bottomColor: string
+
+        if (isYes) {
+            lineColor = isPositive ? '#10b981' : '#ef4444'
+            topColor = isPositive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+            bottomColor = isPositive ? 'rgba(16, 185, 129, 0.0)' : 'rgba(239, 68, 68, 0.0)'
+        } else {
+            // No shares use a red/orange color scheme
+            lineColor = isPositive ? '#f97316' : '#dc2626'
+            topColor = isPositive ? 'rgba(249, 115, 22, 0.4)' : 'rgba(220, 38, 38, 0.4)'
+            bottomColor = isPositive ? 'rgba(249, 115, 22, 0.0)' : 'rgba(220, 38, 38, 0.0)'
+        }
 
         const areaSeries = chart.addSeries(AreaSeries, {
             lineColor,
@@ -154,7 +204,15 @@ export default function PriceChart() {
             window.removeEventListener('resize', handleResize)
             cleanupChart()
         }
-    }, [chartData, priceChange?.isPositive, cleanupChart])
+    }, [chartData, priceChange?.isPositive, selectedShareType, cleanupChart])
+
+    // Calculate current price based on share type
+    const currentPrice = useMemo(() => {
+        if (!selectedMarket) return null
+        return selectedShareType === 'Yes'
+            ? selectedMarket.yes_percentage
+            : 100 - selectedMarket.yes_percentage
+    }, [selectedMarket, selectedShareType])
 
     if (!selectedMarket) {
         return (
@@ -188,15 +246,19 @@ export default function PriceChart() {
         return (
             <div className="h-[400px] rounded-xl p-6 bg-surface-900/50">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-white">Price History</h3>
+                    <div className="flex items-center gap-4">
+                        <h3 className="text-lg font-semibold text-white">Price History</h3>
+                        <ShareTypeToggle value={selectedShareType} onChange={setSelectedShareType} />
+                    </div>
                     <span className="text-sm text-surface-300">Recording history...</span>
                 </div>
                 <div className="flex-1 flex items-center justify-center h-[300px]">
                     <div className="text-center">
-                        <p className="text-5xl font-bold text-primary-400 mb-2">
-                            {selectedMarket.yes_percentage.toFixed(2)}%
+                        <p className={`text-5xl font-bold mb-2 ${selectedShareType === 'Yes' ? 'text-green-400' : 'text-orange-400'
+                            }`}>
+                            {currentPrice?.toFixed(2)}%
                         </p>
-                        <p className="text-surface-300">Current "Yes" Probability</p>
+                        <p className="text-surface-300">Current "{selectedShareType}" Probability</p>
                         <p className="text-sm text-surface-400 mt-4">
                             Price history will build up over time
                         </p>
@@ -210,15 +272,25 @@ export default function PriceChart() {
         <div className="h-[400px] rounded-xl p-4 bg-surface-900/50">
             <div className="flex items-center justify-between mb-4">
                 <div>
-                    <h3 className="text-lg font-semibold text-white">Yes Price History</h3>
+                    <div className="flex items-center gap-4">
+                        <h3 className="text-lg font-semibold text-white">
+                            {selectedShareType} Price History
+                        </h3>
+                        <ShareTypeToggle value={selectedShareType} onChange={setSelectedShareType} />
+                    </div>
                     {priceChange && (
                         <div className="flex items-center gap-1 mt-1">
                             {priceChange.isPositive ? (
-                                <TrendingUp className="w-4 h-4 text-green-400" />
+                                <TrendingUp className={`w-4 h-4 ${selectedShareType === 'Yes' ? 'text-green-400' : 'text-orange-400'
+                                    }`} />
                             ) : (
                                 <TrendingDown className="w-4 h-4 text-red-400" />
                             )}
-                            <span className={priceChange.isPositive ? 'text-green-400' : 'text-red-400'}>
+                            <span className={
+                                priceChange.isPositive
+                                    ? selectedShareType === 'Yes' ? 'text-green-400' : 'text-orange-400'
+                                    : 'text-red-400'
+                            }>
                                 {priceChange.isPositive ? '+' : ''}
                                 {priceChange.value.toFixed(2)}%
                             </span>

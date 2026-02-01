@@ -16,21 +16,26 @@ export interface Market {
 }
 
 export type Timeframe = '24H' | '7D' | '1M' | 'ALL'
+export type ShareType = 'Yes' | 'No'
 
 interface MarketStore {
     selectedMarket: Market | null
     selectedTimeframe: Timeframe
+    selectedShareType: ShareType
     searchQuery: string
     setSelectedMarket: (market: Market | null) => void
     setSelectedTimeframe: (timeframe: Timeframe) => void
+    setSelectedShareType: (shareType: ShareType) => void
     setSearchQuery: (query: string) => void
 }
 
 export const useMarketStore = create<MarketStore>((set) => ({
     selectedMarket: null,
     selectedTimeframe: '24H',
+    selectedShareType: 'Yes',
     searchQuery: '',
     setSelectedMarket: (market) => set({ selectedMarket: market }),
     setSelectedTimeframe: (timeframe) => set({ selectedTimeframe: timeframe }),
+    setSelectedShareType: (shareType) => set({ selectedShareType: shareType }),
     setSearchQuery: (query) => set({ searchQuery: query }),
 }))

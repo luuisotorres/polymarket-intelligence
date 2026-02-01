@@ -12,6 +12,7 @@ interface AgentConfig {
     generalist_expert: boolean;
     devils_advocate: boolean;
     crypto_macro_analyst: boolean;
+    time_decay_analyst: boolean;
 }
 
 interface DebateResponse {
@@ -33,6 +34,13 @@ const AGENTS = [
         emoji: '📊',
         color: 'blue',
         description: 'Analyzes price, volume, and probability'
+    },
+    {
+        key: 'time_decay_analyst' as keyof AgentConfig,
+        label: 'Time Decay Analyst',
+        emoji: '⏰',
+        color: 'cyan',
+        description: 'Analyzes resolution timing and theta'
     },
     {
         key: 'generalist_expert' as keyof AgentConfig,
@@ -69,6 +77,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
         generalist_expert: true,
         devils_advocate: true,
         crypto_macro_analyst: true,
+        time_decay_analyst: true,
     });
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -149,7 +158,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         Active Agents
                     </h3>
                     <span className="text-xs text-gray-500">
-                        {enabledCount}/4 enabled • Moderator always active
+                        {enabledCount}/5 enabled • Moderator always active
                     </span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -157,6 +166,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         const isEnabled = agentConfig[agent.key];
                         const colorMap: Record<string, { bg: string; border: string; text: string }> = {
                             blue: { bg: 'bg-blue-500', border: 'border-blue-500/50', text: 'text-blue-400' },
+                            cyan: { bg: 'bg-cyan-500', border: 'border-cyan-500/50', text: 'text-cyan-400' },
                             green: { bg: 'bg-green-500', border: 'border-green-500/50', text: 'text-green-400' },
                             yellow: { bg: 'bg-yellow-500', border: 'border-yellow-500/50', text: 'text-yellow-400' },
                             red: { bg: 'bg-red-500', border: 'border-red-500/50', text: 'text-red-400' },
@@ -235,29 +245,33 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         key={idx}
                         className={`p-5 rounded-2xl border backdrop-blur-sm transition-all duration-500 animate-slideInLeft ${msg.agent === 'Statistics Expert'
                             ? 'bg-blue-900/20 border-blue-500/30 ml-0 mr-12'
-                            : msg.agent === 'Generalist Expert'
-                                ? 'bg-green-900/20 border-green-500/30 ml-4 mr-8'
-                                : msg.agent === "Devil's Advocate"
-                                    ? 'bg-red-900/20 border-red-500/30 ml-8 mr-4'
-                                    : msg.agent === 'Crypto/Macro Analyst'
-                                        ? 'bg-yellow-900/20 border-yellow-500/30 ml-12 mr-0'
-                                        : 'bg-gray-800/40 border-gray-600/30 mx-6'
+                            : msg.agent === 'Time Decay Analyst'
+                                ? 'bg-cyan-900/20 border-cyan-500/30 ml-2 mr-10'
+                                : msg.agent === 'Generalist Expert'
+                                    ? 'bg-green-900/20 border-green-500/30 ml-4 mr-8'
+                                    : msg.agent === "Devil's Advocate"
+                                        ? 'bg-red-900/20 border-red-500/30 ml-8 mr-4'
+                                        : msg.agent === 'Crypto/Macro Analyst'
+                                            ? 'bg-yellow-900/20 border-yellow-500/30 ml-12 mr-0'
+                                            : 'bg-gray-800/40 border-gray-600/30 mx-6'
                             }`}
                         style={{ animationDelay: `${idx * 0.1}s` }}
                     >
                         <div className="flex items-center gap-3 mb-2">
                             <span className="text-xl">
                                 {msg.agent === 'Statistics Expert' && '📊'}
+                                {msg.agent === 'Time Decay Analyst' && '⏰'}
                                 {msg.agent === 'Generalist Expert' && '🌍'}
                                 {msg.agent === "Devil's Advocate" && '😈'}
                                 {msg.agent === 'Crypto/Macro Analyst' && '📈'}
                                 {msg.agent === 'Moderator' && '👨‍⚖️'}
                             </span>
                             <span className={`font-bold ${msg.agent === 'Statistics Expert' ? 'text-blue-400' :
-                                msg.agent === 'Generalist Expert' ? 'text-green-400' :
-                                    msg.agent === "Devil's Advocate" ? 'text-red-400' :
-                                        msg.agent === 'Crypto/Macro Analyst' ? 'text-yellow-400' :
-                                            'text-purple-400'
+                                msg.agent === 'Time Decay Analyst' ? 'text-cyan-400' :
+                                    msg.agent === 'Generalist Expert' ? 'text-green-400' :
+                                        msg.agent === "Devil's Advocate" ? 'text-red-400' :
+                                            msg.agent === 'Crypto/Macro Analyst' ? 'text-yellow-400' :
+                                                'text-purple-400'
                                 }`}>
                                 {msg.agent}
                             </span>

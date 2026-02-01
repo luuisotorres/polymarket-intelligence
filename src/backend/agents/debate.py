@@ -21,6 +21,7 @@ class AgentConfig(TypedDict):
     generalist_expert: bool
     devils_advocate: bool
     crypto_macro_analyst: bool
+    time_decay_analyst: bool
 
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
@@ -28,6 +29,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "generalist_expert": True,
     "devils_advocate": True,
     "crypto_macro_analyst": True,
+    "time_decay_analyst": True,
 }
 
 # --- Configuration ---
@@ -347,6 +349,114 @@ def compute_support_resistance(prices: List[float]) -> Dict[str, Any]:
     }
 
 
+def calculate_time_decay_metrics(end_date_str: str, current_price: float) -> Dict[str, Any]:
+    """
+    Calculate time decay metrics for a prediction market.
+    
+    Args:
+        end_date_str: Market end/resolution date as string
+        current_price: Current YES price (0-100 scale)
+    
+    Returns:
+        Dict with time decay analysis
+    """
+    try:
+        # Parse end date
+        if end_date_str and end_date_str != "Unknown":
+            # Try multiple date formats
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"]:
+                try:
+                    end_date = datetime.datetime.strptime(str(end_date_str).split(".")[0], fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return {"error": "Could not parse end date", "days_remaining": None}
+        else:
+            return {"error": "No end date provided", "days_remaining": None}
+        
+        now = datetime.datetime.now()
+        time_delta = end_date - now
+        days_remaining = time_delta.days + (time_delta.seconds / 86400)
+        hours_remaining = time_delta.total_seconds() / 3600
+        
+        if days_remaining < 0:
+            return {
+                "days_remaining": 0,
+                "hours_remaining": 0,
+                "status": "EXPIRED",
+                "urgency": "Market has ended",
+                "theta_impact": "N/A"
+            }
+        
+        # Classify urgency
+        if hours_remaining <= 24:
+            urgency = "CRITICAL"
+            urgency_desc = "Less than 24 hours - high gamma, expect volatility"
+        elif days_remaining <= 3:
+            urgency = "HIGH"
+            urgency_desc = "Under 3 days - time pressure increasing"
+        elif days_remaining <= 7:
+            urgency = "MODERATE"
+            urgency_desc = "Under a week - monitor closely"
+        elif days_remaining <= 30:
+            urgency = "LOW"
+            urgency_desc = "Over a week - time is on your side"
+        else:
+            urgency = "MINIMAL"
+            urgency_desc = "Over a month - plenty of time for thesis to play out"
+        
+        # Calculate theta (time decay factor)
+        # Higher theta = faster price convergence expected
+        if days_remaining > 0:
+            # Theta increases as resolution approaches (like options)
+            theta = 1 / math.sqrt(max(days_remaining, 0.1))
+        else:
+            theta = 1.0
+        
+        # Probability-time analysis
+        # Markets at extreme prices with little time = likely priced correctly
+        # Markets at 40-60% with little time = high uncertainty, volatile
+        price_uncertainty = 1 - abs(current_price - 50) / 50  # 0 at extremes, 1 at 50%
+        time_pressure = min(1, 7 / max(days_remaining, 0.1))  # 1 if <7 days, lower if more
+        
+        volatility_risk = price_uncertainty * time_pressure
+        
+        if volatility_risk > 0.7:
+            vol_assessment = "HIGH - Uncertain outcome with little time = expect large swings"
+        elif volatility_risk > 0.4:
+            vol_assessment = "MODERATE - Some price movement expected"
+        else:
+            vol_assessment = "LOW - Price likely stable or already at terminal value"
+        
+        # Theta advantage analysis
+        if current_price > 80 and days_remaining < 7:
+            theta_advice = "Time favors YES holders - market pricing in high likelihood"
+        elif current_price < 20 and days_remaining < 7:
+            theta_advice = "Time favors NO holders - market pricing in low likelihood"
+        elif 40 < current_price < 60 and days_remaining < 3:
+            theta_advice = "Coin flip with clock ticking - high risk, wait for clarity or avoid"
+        elif days_remaining > 30:
+            theta_advice = "Plenty of time for information to emerge - patience may be rewarded"
+        else:
+            theta_advice = "Monitor for catalysts that could accelerate price discovery"
+        
+        return {
+            "days_remaining": round(days_remaining, 1),
+            "hours_remaining": round(hours_remaining, 1),
+            "end_date": end_date.strftime("%Y-%m-%d %H:%M"),
+            "urgency": urgency,
+            "urgency_description": urgency_desc,
+            "theta_factor": round(theta, 3),
+            "volatility_risk": round(volatility_risk, 2),
+            "volatility_assessment": vol_assessment,
+            "theta_advice": theta_advice
+        }
+        
+    except Exception as e:
+        return {"error": str(e), "days_remaining": None}
+
+
 # --- State Definition ---
 class DebateState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -618,6 +728,123 @@ def crypto_macro_analyst(state: DebateState):
         logger.error(f"Crypto/Macro Analyst failed: {e}")
         return {"messages": [HumanMessage(content=f"**Crypto/Macro Analyst**: (Failed to analyze) {e}", name="Crypto/Macro Analyst")]}
 
+
+def time_decay_analyst(state: DebateState):
+    """
+    Time Decay & Resolution Analyst.
+    
+    Specializes in understanding time-to-resolution dynamics,
+    theta decay, and optimal entry/exit timing based on market expiration.
+    """
+    try:
+        market_data = state.get("market_data", {})
+        question = state.get("market_question", "Unknown Market")
+        prices_24h = state.get("price_history_24h", [])
+        prices_7d = state.get("price_history_7d", [])
+        
+        current_price = market_data.get("price", 50.0)
+        end_date = market_data.get("end_date", "Unknown")
+        volume_24h = market_data.get("volume_24h", 0)
+        
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        # --- Calculate Time Decay Metrics ---
+        time_metrics = calculate_time_decay_metrics(end_date, current_price)
+        
+        # --- Analyze Recent Price Velocity ---
+        velocity_analysis = ""
+        if prices_24h and len(prices_24h) >= 2:
+            recent_change = prices_24h[-1] - prices_24h[0]
+            if abs(recent_change) > 5:
+                velocity_analysis = f"Price moved {recent_change:+.1f}% in last 24h - active information flow"
+            else:
+                velocity_analysis = f"Price stable (Δ{recent_change:+.1f}%) - market in wait-and-see mode"
+        else:
+            velocity_analysis = "Insufficient price data for velocity analysis"
+        
+        # --- Build Time Analysis Report ---
+        if time_metrics.get("error"):
+            time_report = f"""
+## Time Decay Analysis
+
+⚠️ **Unable to analyze**: {time_metrics.get('error')}
+
+Without a resolution date, time-based analysis is not possible.
+Proceed with caution and rely on other signals.
+            """.strip()
+        else:
+            days = time_metrics.get("days_remaining", "?")
+            hours = time_metrics.get("hours_remaining", "?")
+            urgency = time_metrics.get("urgency", "Unknown")
+            urgency_desc = time_metrics.get("urgency_description", "")
+            theta = time_metrics.get("theta_factor", 0)
+            vol_risk = time_metrics.get("volatility_risk", 0)
+            vol_assess = time_metrics.get("volatility_assessment", "")
+            theta_advice = time_metrics.get("theta_advice", "")
+            end_dt = time_metrics.get("end_date", "Unknown")
+            
+            # Urgency emoji
+            urgency_emoji = {
+                "CRITICAL": "🔴",
+                "HIGH": "🟠",
+                "MODERATE": "🟡",
+                "LOW": "🟢",
+                "MINIMAL": "⚪"
+            }.get(urgency, "⚪")
+            
+            time_report = f"""
+## Time Decay & Resolution Analysis
+
+### Resolution Timeline
+- **Resolution Date**: {end_dt}
+- **Time Remaining**: {days} days ({hours:.0f} hours)
+- **Urgency**: {urgency_emoji} {urgency} - {urgency_desc}
+
+### Theta Analysis (Time Decay Factor)
+- **Theta Factor**: {theta:.3f} (higher = faster expected convergence)
+- **Volatility Risk Score**: {vol_risk:.2f}/1.00
+- **Volatility Assessment**: {vol_assess}
+
+### Price Velocity
+- {velocity_analysis}
+- **24h Volume**: ${volume_24h:,.0f}
+
+### Strategic Implications
+{theta_advice}
+            """.strip()
+        
+        # --- LLM Synthesis ---
+        prompt = f"""
+        You are a Time Decay & Resolution Analyst for prediction markets.
+        Today's date is: {today}
+        
+        Market Question: "{question}"
+        Current Price: {current_price:.1f}%
+        
+        I have computed the following time-based analysis:
+        
+        {time_report}
+        
+        Based on this time analysis:
+        1. Is the timing favorable for entering a position now, or should the user wait?
+        2. What specific catalysts or events should occur before resolution that could move the price?
+        3. Is the current price "priced in" given the time remaining, or is there mispricing?
+        4. What's the optimal strategy considering time decay (hold, take profits, cut losses, wait)?
+        
+        Be specific about timing recommendations. Reference the calculated metrics.
+        """
+        
+        logger.info(f"Time Decay Analyst computed report, invoking LLM for synthesis...")
+        response = llm.invoke([HumanMessage(content=prompt)])
+        
+        full_response = f"{time_report}\n\n---\n\n### Expert Interpretation\n\n{response.content}"
+        
+        return {"messages": [HumanMessage(content=f"**Time Decay Analyst**: {full_response}", name="Time Decay Analyst")]}
+    except Exception as e:
+        logger.error(f"Time Decay Analyst failed: {e}")
+        return {"messages": [HumanMessage(content=f"**Time Decay Analyst**: (Failed to analyze) {e}", name="Time Decay Analyst")]}
+
+
 def moderator(state: DebateState):
     """Synthesizes the debate into a verdict."""
     try:
@@ -667,10 +894,12 @@ AGENT_NODES = {
     "generalist_expert": generalist_expert,
     "devils_advocate": devils_advocate,
     "crypto_macro_analyst": crypto_macro_analyst,
+    "time_decay_analyst": time_decay_analyst,
 }
 
 # Preferred order of agents (Devil's Advocate should come after others to challenge their points)
-AGENT_ORDER = ["statistics_expert", "generalist_expert", "crypto_macro_analyst", "devils_advocate"]
+# Time Decay Analyst comes after Statistics to add temporal context to the quantitative analysis
+AGENT_ORDER = ["statistics_expert", "time_decay_analyst", "generalist_expert", "crypto_macro_analyst", "devils_advocate"]
 
 
 def build_debate_graph(config: Optional[AgentConfig] = None) -> StateGraph:

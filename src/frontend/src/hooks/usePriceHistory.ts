@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 interface PricePoint {
     timestamp: string
     yes_percentage: number
+    no_percentage: number
     volume: number
 }
 
@@ -22,7 +23,18 @@ const fetchPriceHistory = async (
     if (!response.ok) {
         throw new Error('Failed to fetch price history')
     }
-    return response.json()
+    const data = await response.json()
+
+    // Compute no_percentage for each price point
+    const historyWithNo: PricePoint[] = data.history.map((point: { timestamp: string; yes_percentage: number; volume: number }) => ({
+        ...point,
+        no_percentage: 100 - point.yes_percentage,
+    }))
+
+    return {
+        ...data,
+        history: historyWithNo,
+    }
 }
 
 export const usePriceHistory = (marketId: string | null, timeframe: string) => {
@@ -36,3 +48,4 @@ export const usePriceHistory = (marketId: string | null, timeframe: string) => {
 }
 
 export type { PricePoint, PriceHistoryResponse }
+

@@ -26,6 +26,7 @@ class AgentConfigRequest(BaseModel):
     generalist_expert: bool = Field(default=True, description="Enable Generalist Expert (News Analyst) agent")
     devils_advocate: bool = Field(default=True, description="Enable Devil's Advocate agent")
     crypto_macro_analyst: bool = Field(default=True, description="Enable Crypto/Macro Analyst agent")
+    time_decay_analyst: bool = Field(default=True, description="Enable Time Decay & Resolution Analyst agent")
 
 
 class DebateRequest(BaseModel):
@@ -116,6 +117,7 @@ async def initiate_debate(
         "generalist_expert": True,
         "devils_advocate": True,
         "crypto_macro_analyst": True,
+        "time_decay_analyst": True,
     }
     
     if request and request.agents:
@@ -124,6 +126,7 @@ async def initiate_debate(
             "generalist_expert": request.agents.generalist_expert,
             "devils_advocate": request.agents.devils_advocate,
             "crypto_macro_analyst": request.agents.crypto_macro_analyst,
+            "time_decay_analyst": request.agents.time_decay_analyst,
         }
     
     # Track enabled agents for response

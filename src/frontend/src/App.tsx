@@ -27,7 +27,7 @@ function App() {
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-white tracking-tight">
-                                Polymarket News Tracker
+                                Polymarket Intelligence
                             </h1>
                             <p className="text-sm text-surface-200">
                                 Real-time markets & news
