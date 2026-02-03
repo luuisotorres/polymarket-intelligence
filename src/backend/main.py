@@ -23,7 +23,7 @@ from src.backend.config import settings
 from src.backend.database import close_db, init_db
 from src.backend.polymarket.client import polymarket_client
 from src.backend.news.aggregator import news_aggregator
-from src.backend.routes import markets, news, debate
+from src.backend.routes import markets, news, debate, users
 from src.backend.tasks.update_markets import get_scheduler, update_top_markets
 
 # Configure logging
@@ -91,6 +91,7 @@ app.add_middleware(
 app.include_router(markets.router)
 app.include_router(news.router)
 app.include_router(debate.router)
+app.include_router(users.router)
 
 
 @app.get("/api/health")

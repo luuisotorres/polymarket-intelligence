@@ -100,6 +100,15 @@ Comprehensive price statistics including:
 
 ## Updates
 
+### February 3, 2026
+
+#### User Analytics Dashboard
+Added a dedicated user analytics experience with wallet/username search, total P&L alignment, ROI, win rate, and top wins/losses.
+
+![User Analytics](assets/screenshots/Screenshot%202026-02-02%20at%2022.02.00.png)
+
+---
+
 ### February 1, 2026
 
 #### Time Decay & Resolution Analyst
