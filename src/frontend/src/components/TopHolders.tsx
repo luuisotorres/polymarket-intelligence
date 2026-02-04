@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Trophy, User } from 'lucide-react'
 import { useMarketStore } from '../stores/marketStore'
+import { getUserTags } from '../utils/userTags'
 
 interface Holder {
     address: string
@@ -11,6 +12,7 @@ interface Holder {
     market_roi: number
     global_pnl: number
     global_roi: number
+    total_balance?: number
 }
 
 interface HoldersResponse {
@@ -52,6 +54,21 @@ function HolderRow({ holder, rank }: { holder: Holder; rank: number }) {
     // Check if name is generic address or nickname
     const displayName = holder.name && holder.name !== "" ? holder.name : formatAddress(holder.address)
 
+    const tags = getUserTags({
+        global_pnl: holder.global_pnl,
+        total_balance: holder.total_balance ?? null,
+    })
+
+    const tagClass = (tone: 'positive' | 'negative' | 'neutral') => {
+        if (tone === 'positive') {
+            return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+        }
+        if (tone === 'negative') {
+            return 'bg-red-500/10 text-red-300 border-red-500/20'
+        }
+        return 'bg-surface-700/30 text-surface-300 border-surface-600/30'
+    }
+
     return (
         <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 rounded-lg transition-colors group">
             <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -66,15 +83,29 @@ function HolderRow({ holder, rank }: { holder: Holder; rank: number }) {
                             <User className="w-3 h-3 text-surface-400" />
                         </div>
                     )}
-                    <a
-                        href={`https://polymarket.com/profile/${holder.address}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-surface-200 truncate hover:text-white transition-colors"
-                        title={holder.name}
-                    >
-                        {displayName}
-                    </a>
+                    <div className="min-w-0">
+                        <a
+                            href={`https://polymarket.com/profile/${holder.address}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm text-surface-200 truncate hover:text-white transition-colors block"
+                            title={holder.name}
+                        >
+                            {displayName}
+                        </a>
+                        {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {tags.map((tag) => (
+                                    <span
+                                        key={`${tag.label}-${tag.display}`}
+                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${tagClass(tag.tone)}`}
+                                    >
+                                        {tag.label} {tag.display}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

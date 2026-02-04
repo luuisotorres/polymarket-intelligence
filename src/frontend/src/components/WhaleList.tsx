@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Wallet, RefreshCw, Clock, ExternalLink, TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import { useWhales, WhaleTrade } from '../hooks/useWhales'
 import { useMarketStore } from '../stores/marketStore'
+import { getUserTags } from '../utils/userTags'
 
 function formatAddress(address: string): string {
     if (!address) return 'Unknown'
@@ -37,6 +38,20 @@ function formatTimeAgo(dateString: string): string {
 function WhaleTradeCard({ trade, rank }: { trade: WhaleTrade; rank: number }) {
     const isBuy = trade.side === 'BUY'
     const displayName = trade.name || formatAddress(trade.address)
+    const tags = getUserTags({
+        global_pnl: trade.global_pnl,
+        total_balance: trade.total_balance,
+    })
+
+    const tagClass = (tone: 'positive' | 'negative' | 'neutral') => {
+        if (tone === 'positive') {
+            return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+        }
+        if (tone === 'negative') {
+            return 'bg-red-500/10 text-red-300 border-red-500/20'
+        }
+        return 'bg-surface-700/30 text-surface-300 border-surface-600/30'
+    }
 
     return (
         <div className="p-4 glass-light rounded-xl hover:bg-white/5 transition-all group">
@@ -103,6 +118,19 @@ function WhaleTradeCard({ trade, rank }: { trade: WhaleTrade; rank: number }) {
                             </span>
                         </div>
 
+                        {tags.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                                {tags.map((tag) => (
+                                    <span
+                                        key={`${tag.label}-${tag.display}`}
+                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${tagClass(tag.tone)}`}
+                                    >
+                                        {tag.label} {tag.display}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Volume */}
                         <span className={`text-sm font-bold ml-2 ${trade.is_bullish ? 'text-emerald-400' : 'text-red-400'}`}>
                             {formatCurrency(trade.volume)}
@@ -158,13 +186,24 @@ function WhaleSkeleton() {
 }
 
 const VOLUME_THRESHOLDS = [100, 250, 500, 1000, 5000]
+const LOOKBACK_OPTIONS = [
+    { label: '24H', days: 1 },
+    { label: '3D', days: 3 },
+    { label: '7D', days: 7 },
+    { label: '14D', days: 14 },
+]
 
 export function WhaleList() {
     const { selectedMarket } = useMarketStore()
     const [minVolume, setMinVolume] = useState(100)
+    const [lookbackDays, setLookbackDays] = useState(7)
     const [sentimentFilter, setSentimentFilter] = useState<'ALL' | 'BULLISH' | 'BEARISH'>('ALL')
 
-    const { data: trades, isLoading, error, refetch, isFetching } = useWhales(selectedMarket?.id ?? null, minVolume)
+    const { data: trades, isLoading, error, refetch, isFetching } = useWhales(
+        selectedMarket?.id ?? null,
+        minVolume,
+        lookbackDays
+    )
 
     const filteredTrades = trades?.filter((trade: WhaleTrade) => {
         if (sentimentFilter === 'ALL') return true
@@ -225,6 +264,25 @@ export function WhaleList() {
                                     }`}
                             >
                                 ${threshold >= 1000 ? `${threshold / 1000}k` : threshold}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Lookback selector */}
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-surface-200/60 whitespace-nowrap">Lookback:</span>
+                    <div className="flex bg-surface-800/50 rounded-lg p-0.5 flex-wrap">
+                        {LOOKBACK_OPTIONS.map((option) => (
+                            <button
+                                key={option.days}
+                                onClick={() => setLookbackDays(option.days)}
+                                className={`px-2 py-1 text-[10px] font-medium rounded-md transition-all ${lookbackDays === option.days
+                                    ? 'bg-primary-500/20 text-primary-400 shadow-sm'
+                                    : 'text-surface-400 hover:text-surface-200'
+                                    }`}
+                            >
+                                {option.label}
                             </button>
                         ))}
                     </div>

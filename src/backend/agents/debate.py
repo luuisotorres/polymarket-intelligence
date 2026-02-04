@@ -22,6 +22,7 @@ class AgentConfig(TypedDict):
     devils_advocate: bool
     crypto_macro_analyst: bool
     time_decay_analyst: bool
+    top_traders_analyst: bool
 
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
@@ -30,6 +31,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "devils_advocate": True,
     "crypto_macro_analyst": True,
     "time_decay_analyst": True,
+    "top_traders_analyst": True,
 }
 
 # --- Configuration ---
@@ -465,6 +467,7 @@ class DebateState(TypedDict):
     verdict: str
     price_history_24h: Optional[List[float]]  # Price history for calculations
     price_history_7d: Optional[List[float]]   # 7-day price history
+    top_traders: Optional[List[Dict[str, Any]]]
 
 # --- Agents ---
 
@@ -603,6 +606,87 @@ def statistics_expert(state: DebateState):
     except Exception as e:
         logger.error(f"Statistics Expert failed: {e}")
         return {"messages": [HumanMessage(content=f"**Statistics Expert**: (Failed to analyze) {e}", name="Statistics Expert")]}
+
+
+def top_traders_analyst(state: DebateState):
+    """
+    Analyze top traders for performance, PnL, and recent flow direction.
+    """
+    try:
+        top_traders = state.get("top_traders") or []
+        question = state.get("market_question", "Unknown Market")
+        market_data = state.get("market_data", {})
+        current_price = market_data.get("price", 50.0)
+
+        if not top_traders:
+            return {"messages": [HumanMessage(content="**Top Traders Analyst**: No top trader data available for this market.", name="Top Traders Analyst")]}
+
+        def format_usd(value: float) -> str:
+            return f"${value:,.0f}"
+
+        trader_lines = []
+        for trader in top_traders:
+            name = trader.get("name") or trader.get("address", "Unknown")
+            address = trader.get("address", "Unknown")
+            total_volume = float(trader.get("total_volume", 0))
+            trade_count = int(trader.get("trade_count", 0))
+            bullish_volume = float(trader.get("bullish_volume", 0))
+            bearish_volume = float(trader.get("bearish_volume", 0))
+            bias = trader.get("bias", "mixed")
+            last_trade = trader.get("last_trade_at", "Unknown")
+            pnl = trader.get("global_pnl")
+            balance = trader.get("total_balance")
+            source = trader.get("source", "trades")
+            position_amount = trader.get("position_amount")
+            outcome_index = trader.get("outcome_index")
+
+            pnl_text = format_usd(pnl) if isinstance(pnl, (int, float)) else "N/A"
+            balance_text = format_usd(balance) if isinstance(balance, (int, float)) else "N/A"
+
+            if source == "holders":
+                side = "YES" if outcome_index == 0 else "NO" if outcome_index == 1 else "?"
+                shares = float(position_amount) if isinstance(position_amount, (int, float)) else 0.0
+                trader_lines.append(
+                    f"- **{name}** (`{address[:6]}…{address[-4:]}`) | "
+                    f"Position: {shares:,.0f} shares ({side}) | "
+                    f"PnL {pnl_text} | Balance {balance_text}"
+                )
+            else:
+                trader_lines.append(
+                    f"- **{name}** (`{address[:6]}…{address[-4:]}`) | "
+                    f"Volume {format_usd(total_volume)} across {trade_count} trades | "
+                    f"Flow: {bias} (bull {format_usd(bullish_volume)} vs bear {format_usd(bearish_volume)}) | "
+                    f"PnL {pnl_text} | Balance {balance_text} | Last trade {last_trade}"
+                )
+
+        traders_report = "\n".join(trader_lines)
+
+        prompt = f"""
+        You are the Top Traders Analyst on the Debate Floor.
+
+        Market: "{question}"
+        Current Price: {current_price:.1f}%
+
+        Here are the top actors (preferably top holders; otherwise top traders) and their recent activity:
+        {traders_report}
+
+        Please evaluate:
+        1. Which traders show the strongest positive or negative track record (PnL, consistency)?
+        2. What does the aggregate flow suggest (bullish vs bearish pressure)?
+        3. Are the most profitable traders aligned or fading the market price?
+        4. Any notable momentum or reversals in trader behavior?
+
+        Provide a concise, actionable summary for debate participants.
+        Use bullet points and highlight the key traders by name.
+        """
+
+        response = llm.invoke([HumanMessage(content=prompt)])
+        full_response = f"## Top Traders Snapshot\n\n{traders_report}\n\n---\n\n### Expert Interpretation\n\n{response.content}"
+
+        return {"messages": [HumanMessage(content=f"**Top Traders Analyst**: {full_response}", name="Top Traders Analyst")]}
+    except Exception as e:
+        logger.error(f"Top Traders Analyst failed: {e}")
+        return {"messages": [HumanMessage(content=f"**Top Traders Analyst**: (Failed to analyze) {e}", name="Top Traders Analyst")]}
 
 def generalist_expert(state: DebateState):
     """Searches for recent news using Tavily."""
@@ -891,6 +975,7 @@ def moderator(state: DebateState):
 # Agent definitions for dynamic graph building
 AGENT_NODES = {
     "statistics_expert": statistics_expert,
+    "top_traders_analyst": top_traders_analyst,
     "generalist_expert": generalist_expert,
     "devils_advocate": devils_advocate,
     "crypto_macro_analyst": crypto_macro_analyst,
@@ -899,7 +984,14 @@ AGENT_NODES = {
 
 # Preferred order of agents (Devil's Advocate should come after others to challenge their points)
 # Time Decay Analyst comes after Statistics to add temporal context to the quantitative analysis
-AGENT_ORDER = ["statistics_expert", "time_decay_analyst", "generalist_expert", "crypto_macro_analyst", "devils_advocate"]
+AGENT_ORDER = [
+    "statistics_expert",
+    "time_decay_analyst",
+    "top_traders_analyst",
+    "generalist_expert",
+    "crypto_macro_analyst",
+    "devils_advocate",
+]
 
 
 def build_debate_graph(config: Optional[AgentConfig] = None) -> StateGraph:

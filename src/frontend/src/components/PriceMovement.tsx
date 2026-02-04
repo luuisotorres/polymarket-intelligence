@@ -165,7 +165,7 @@ export function PriceMovement() {
         return (
             <div className="text-center py-12 text-surface-200">
                 <BarChart3 className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Select a market to see price movement</p>
+                <p className="text-sm">Select a market to see price analysis</p>
             </div>
         )
     }

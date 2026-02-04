@@ -43,6 +43,108 @@ class PriceHistoryResponse(BaseModel):
     timeframe: str
 
 
+def _parse_float(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _extract_position_value(position: dict) -> float:
+    for key in (
+        "currentValue",
+        "current_value",
+        "value",
+        "positionValue",
+        "position_value",
+        "markValue",
+        "mark_value",
+        "notionalValue",
+        "notional_value",
+        "totalValue",
+        "total_value",
+    ):
+        raw = position.get(key)
+        if raw is None:
+            continue
+        parsed = _parse_float(raw)
+        if parsed > 0:
+            return parsed
+
+    initial_val = _parse_float(position.get("initialValue") or 0)
+    cash_pnl = _parse_float(position.get("cashPnl") or 0)
+    fallback = initial_val + cash_pnl
+    return fallback if fallback > 0 else 0.0
+
+
+def _extract_position_pnl(position: dict) -> float:
+    for key in (
+        "totalPnl",
+        "total_pnl",
+        "profitLoss",
+        "profit_loss",
+        "pnl",
+        "profit",
+        "cashPnl",
+    ):
+        raw = position.get(key)
+        if raw is None:
+            continue
+        return _parse_float(raw)
+
+    realized = _parse_float(position.get("realizedPnl") or position.get("realized_pnl") or 0)
+    unrealized = _parse_float(position.get("unrealizedPnl") or position.get("unrealized_pnl") or 0)
+    if realized or unrealized:
+        return realized + unrealized
+
+    return 0.0
+
+
+def _extract_closed_position_pnl(position: dict) -> float:
+    for key in ("realizedPnl", "realized_pnl", "cashPnl", "cash_pnl", "pnl"):
+        raw = position.get(key)
+        if raw is None:
+            continue
+        return _parse_float(raw)
+    return 0.0
+
+
+def _compute_global_stats(
+    positions: list[dict],
+    closed_positions: list[dict] | None = None,
+) -> tuple[float, float, float]:
+    global_pnl = 0.0
+    total_cost_basis = 0.0
+    total_balance = 0.0
+
+    for position in positions:
+        if not isinstance(position, dict):
+            continue
+        global_pnl += _extract_position_pnl(position)
+
+        initial_val = _parse_float(position.get("initialValue") or 0)
+        if initial_val > 0:
+            total_cost_basis += initial_val
+
+        total_balance += _extract_position_value(position)
+
+    if closed_positions:
+        for position in closed_positions:
+            if not isinstance(position, dict):
+                continue
+            global_pnl += _extract_closed_position_pnl(position)
+
+            total_bought = _parse_float(position.get("totalBought") or 0)
+            if total_bought > 0:
+                total_cost_basis += total_bought
+
+    if total_balance <= 0 and total_cost_basis > 0:
+        total_balance = max(0.0, total_cost_basis + global_pnl)
+
+    global_roi = (global_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
+    return global_pnl, global_roi, total_balance
+
+
 @router.get("/top50", response_model=MarketListResponse)
 async def get_top_50_markets(db: AsyncSession = Depends(get_db)) -> MarketListResponse:
     """
@@ -327,13 +429,40 @@ async def get_market_stats(
         except Exception as e:
             logger.warning(f"Failed to fetch history for stats: {e}")
     
+    def normalize_history(history: list[dict]) -> list[tuple[int, float]]:
+        points: list[tuple[int, float]] = []
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            try:
+                ts = int(item.get("t"))
+                price = float(item.get("p")) * 100
+            except (TypeError, ValueError):
+                continue
+            points.append((ts, price))
+        points.sort(key=lambda x: x[0])
+        return points
+
+    history_24h_points = normalize_history(history_24h)
+    history_7d_points = normalize_history(history_7d)
+
+    # Use the latest available point from CLOB for a more accurate current price
+    latest_ts = None
+    if history_24h_points:
+        latest_ts, current_price = history_24h_points[-1]
+    if history_7d_points:
+        ts_7d, price_7d = history_7d_points[-1]
+        if latest_ts is None or ts_7d > latest_ts:
+            latest_ts, current_price = ts_7d, price_7d
+
     # Calculate 24h stats
-    if history_24h and len(history_24h) > 1:
-        prices_24h = [h["p"] * 100 for h in history_24h]
+    if len(history_24h_points) > 1:
+        prices_24h = [price for _, price in history_24h_points]
         first_24h = prices_24h[0]
+        last_24h = prices_24h[-1]
         high_24h = max(prices_24h)
         low_24h = min(prices_24h)
-        change_24h = current_price - first_24h
+        change_24h = last_24h - first_24h
         change_24h_percent = (change_24h / first_24h * 100) if first_24h > 0 else 0
     else:
         high_24h = current_price
@@ -343,12 +472,13 @@ async def get_market_stats(
         change_24h_percent = 0
     
     # Calculate 7d stats
-    if history_7d and len(history_7d) > 1:
-        prices_7d = [h["p"] * 100 for h in history_7d]
+    if len(history_7d_points) > 1:
+        prices_7d = [price for _, price in history_7d_points]
         first_7d = prices_7d[0]
+        last_7d = prices_7d[-1]
         high_7d = max(prices_7d)
         low_7d = min(prices_7d)
-        change_7d = current_price - first_7d
+        change_7d = last_7d - first_7d
         change_7d_percent = (change_7d / first_7d * 100) if first_7d > 0 else 0
     else:
         high_7d = current_price
@@ -689,7 +819,9 @@ async def get_market(market_id: str, db: AsyncSession = Depends(get_db)) -> Mark
 async def get_market_trades(
     market_id: str, 
     min_volume: float = 100.0,
-    limit: int = 1000,
+    limit: int = 2000,
+    days: int = Query(default=7, ge=1, le=30),
+    include_user_stats: bool = Query(default=True),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -697,6 +829,8 @@ async def get_market_trades(
     
     Returns individual trades above the min_volume threshold.
     Includes both BUY and SELL orders with bullish/bearish sentiment.
+    Lookback window is configurable via the `days` query param.
+    Optional user stats enrichment via `include_user_stats`.
     
     Bullish = Buying Yes OR Selling No (betting on positive outcome)
     Bearish = Buying No OR Selling Yes (betting on negative outcome)
@@ -714,27 +848,72 @@ async def get_market_trades(
             raise HTTPException(status_code=404, detail="Market not found")
 
         market_slug = market.slug
-        
-        if not market_slug:
+        market_identifiers: list[str] = []
+        if market_slug:
+            market_identifiers.append(market_slug)
+        if market.id and market.id not in market_identifiers:
+            market_identifiers.append(market.id)
+        if market_id and market_id not in market_identifiers:
+            market_identifiers.append(market_id)
+
+        if not market_identifiers:
             return []
 
-        # Fetch trades from Data API
-        trades = await polymarket_client.fetch_trades(market_slug, limit=limit)
-        
-        if not trades:
-            return []
+        # Fetch trades from Data API (try slug, then condition id)
+        trades: list[dict] = []
+        for identifier in market_identifiers:
+            fetched = await polymarket_client.fetch_trades(identifier, limit=limit)
+            if fetched:
+                trades.extend([t for t in fetched if isinstance(t, dict)])
+
+        def normalize_key(value: object) -> str | None:
+            if value is None:
+                return None
+            return str(value).strip().lower()
+
+        market_keys = {
+            normalize_key(market_slug),
+            normalize_key(market.id),
+            normalize_key(market_id),
+        }
+
+        def trade_matches_market(trade: dict) -> bool:
+            trade_fields = [
+                trade.get("slug"),
+                trade.get("marketSlug"),
+                trade.get("market_slug"),
+                trade.get("market"),
+                trade.get("marketId"),
+                trade.get("conditionId"),
+                trade.get("condition_id"),
+            ]
+            normalized = [normalize_key(field) for field in trade_fields if field is not None]
+            if normalized:
+                return any(value in market_keys for value in normalized)
+            return True
+
+        def parse_trade_value(trade: dict, size: float, price: float) -> float:
+            for key in ("value", "tradeValue", "totalValue", "total_value", "usdValue", "usd_value", "notional"):
+                raw = trade.get(key)
+                if raw is None:
+                    continue
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    continue
+            return size * price
 
         whale_trades = []
-        cutoff = datetime.utcnow() - timedelta(hours=48)
+        seen_trade_keys: set[str] = set()
+        cutoff = datetime.utcnow() - timedelta(days=days)
         
         for trade in trades:
             try:
                 if not isinstance(trade, dict):
                     continue
 
-                # Filter by market slug to ensure correct market
-                trade_slug = trade.get("slug")
-                if trade_slug and trade_slug != market_slug:
+                # Filter by market identifiers when present
+                if not trade_matches_market(trade):
                     continue
 
                 # Parse timestamp
@@ -744,7 +923,10 @@ async def get_market_trades(
                     
                 trade_time = None
                 if isinstance(ts_val, (int, float)):
-                    trade_time = datetime.utcfromtimestamp(int(ts_val))
+                    ts_int = int(ts_val)
+                    if ts_int > 10**12:
+                        ts_int = ts_int // 1000
+                    trade_time = datetime.utcfromtimestamp(ts_int)
                 else:
                     try:
                         trade_time = datetime.fromisoformat(str(ts_val).replace("Z", "+00:00"))
@@ -767,7 +949,7 @@ async def get_market_trades(
                 except (ValueError, TypeError):
                     continue
 
-                volume = size * price
+                volume = parse_trade_value(trade, size, price)
                 
                 # Filter by min_volume
                 if volume < min_volume:
@@ -786,11 +968,28 @@ async def get_market_trades(
                     is_bullish = is_no
 
                 # Get user info
-                address = trade.get("proxyWallet") or "Unknown"
+                address = (
+                    trade.get("proxyWallet")
+                    or trade.get("wallet")
+                    or trade.get("address")
+                    or trade.get("user")
+                    or trade.get("trader")
+                    or "Unknown"
+                )
                 name = trade.get("name") or trade.get("pseudonym") or ""
+
+                raw_id = trade.get("transactionHash") or trade.get("tradeId") or trade.get("trade_id")
+                if raw_id:
+                    dedupe_key = str(raw_id)
+                else:
+                    dedupe_key = f"{trade_time.isoformat()}|{address}|{size}|{price}|{side}|{outcome}"
+
+                if dedupe_key in seen_trade_keys:
+                    continue
+                seen_trade_keys.add(dedupe_key)
                 
                 whale_trades.append({
-                    "trade_id": trade.get("transactionHash", "")[:16] if trade.get("transactionHash") else "",
+                    "trade_id": str(raw_id)[:16] if raw_id else dedupe_key[:16],
                     "address": address,
                     "name": name if name else None,
                     "side": side,
@@ -805,6 +1004,79 @@ async def get_market_trades(
             except Exception as e:
                 logger.debug(f"Error processing trade: {e}")
                 continue
+
+        if include_user_stats and whale_trades:
+            addresses = {
+                trade.get("address")
+                for trade in whale_trades
+                if trade.get("address") and trade.get("address") != "Unknown"
+            }
+
+            if addresses:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    semaphore = asyncio.Semaphore(10)
+
+                    async def fetch_user_stats(address: str):
+                        async with semaphore:
+                            positions = []
+                            closed_positions = []
+                            value_total = 0.0
+
+                            try:
+                                response = await client.get(
+                                    "https://data-api.polymarket.com/positions",
+                                    params={"user": address, "limit": "500"},
+                                )
+                                if response.status_code == 200:
+                                    positions = response.json()
+                            except Exception:
+                                positions = []
+
+                            try:
+                                response = await client.get(
+                                    "https://data-api.polymarket.com/closed-positions",
+                                    params={"user": address, "limit": "500"},
+                                )
+                                if response.status_code == 200:
+                                    closed_positions = response.json()
+                            except Exception:
+                                closed_positions = []
+
+                            try:
+                                response = await client.get(
+                                    "https://data-api.polymarket.com/value",
+                                    params={"user": address},
+                                )
+                                if response.status_code == 200:
+                                    payload = response.json()
+                                    if isinstance(payload, list) and payload:
+                                        value_total = _parse_float(payload[0].get("value") or 0)
+                            except Exception:
+                                value_total = 0.0
+
+                        positions = positions if isinstance(positions, list) else []
+                        closed_positions = closed_positions if isinstance(closed_positions, list) else []
+                        global_pnl, global_roi, total_balance = _compute_global_stats(
+                            positions,
+                            closed_positions,
+                        )
+                        if value_total > 0:
+                            total_balance = value_total
+                        return address, {
+                            "global_pnl": global_pnl,
+                            "global_roi": global_roi,
+                            "total_balance": total_balance,
+                        }
+
+                    stats_results = await asyncio.gather(
+                        *[fetch_user_stats(address) for address in addresses]
+                    )
+                    stats_map = {address: stats for address, stats in stats_results}
+
+                for trade in whale_trades:
+                    stats = stats_map.get(trade.get("address"))
+                    if stats:
+                        trade.update(stats)
 
         # Sort by timestamp (newest first)
         whale_trades.sort(key=lambda x: x["timestamp"], reverse=True)
@@ -870,17 +1142,59 @@ async def get_market_holders(
             # We'll fetch for ALL unique addresses found in the top lists 
             # (usually data-api returns top ~20-50 per token, so total ~100 max)
             
-            async def fetch_user_stats(address):
+            async def fetch_user_payload(identifier: str):
+                positions = []
+                closed_positions = []
+                value_total = 0.0
+
                 try:
                     r = await client.get(
                         "https://data-api.polymarket.com/positions",
-                        params={"user": address, "limit": "500"} # fetch enough positions
+                        params={"user": identifier, "limit": "500"} # fetch enough positions
                     )
                     if r.status_code == 200:
-                        return address, r.json()
+                        positions = r.json()
                 except Exception:
-                    pass
-                return address, []
+                    positions = []
+
+                try:
+                    r = await client.get(
+                        "https://data-api.polymarket.com/closed-positions",
+                        params={"user": identifier, "limit": "500"}
+                    )
+                    if r.status_code == 200:
+                        closed_positions = r.json()
+                except Exception:
+                    closed_positions = []
+
+                try:
+                    r = await client.get(
+                        "https://data-api.polymarket.com/value",
+                        params={"user": identifier},
+                    )
+                    if r.status_code == 200:
+                        payload = r.json()
+                        if isinstance(payload, list) and payload:
+                            value_total = _parse_float(payload[0].get("value") or 0)
+                except Exception:
+                    value_total = 0.0
+
+                return (
+                    positions if isinstance(positions, list) else [],
+                    closed_positions if isinstance(closed_positions, list) else [],
+                    value_total,
+                )
+
+            async def fetch_user_stats(address):
+                try:
+                    positions, closed_positions, value_total = await fetch_user_payload(address)
+                    stats = _compute_global_stats(
+                        positions,
+                        closed_positions,
+                    )
+                    return address, positions, stats, value_total
+                except Exception:
+                    return address, [], (0.0, 0.0, 0.0), 0.0
 
             # Batch requests to avoid rate limits? 
             # Polymarket is usually lenient, but let's be safe with max 20 parallel at a time if list is huge?
@@ -888,8 +1202,16 @@ async def get_market_holders(
             stats_tasks = [fetch_user_stats(addr) for addr in unique_addresses]
             user_positions_results = await asyncio.gather(*stats_tasks)
             
-            # Map address -> positions
-            user_positions_map = {addr: pos for addr, pos in user_positions_results if pos is not None}
+            # Map address -> positions, stats
+            user_positions_map = {
+                addr: pos for addr, pos, _, _ in user_positions_results if pos is not None
+            }
+            user_stats_map = {
+                addr: stats for addr, _, stats, _ in user_positions_results if stats is not None
+            }
+            user_values_map = {
+                addr: value for addr, _, _, value in user_positions_results if value is not None
+            }
             
             yes_holders = []
             no_holders = []
@@ -912,8 +1234,6 @@ async def get_market_holders(
                     # Calculate Stats
                     market_pnl = 0.0
                     market_roi = 0.0
-                    global_pnl = 0.0
-                    total_cost_basis = 0.0
                     
                     # Market specific PnL/ROI
                     # Find position matching this market by conditionId (market.id = position.conditionId)
@@ -924,17 +1244,10 @@ async def get_market_holders(
                         market_roi = float(target_pos.get("percentPnl") or 0)
                     
                     # Global Stats
-                    for p in positions:
-                        # PnL
-                        p_pnl = float(p.get("cashPnl") or 0)
-                        global_pnl += p_pnl
-                        
-                        # Use initialValue directly from API for accurate cost basis
-                        initial_val = float(p.get("initialValue") or 0)
-                        if initial_val > 0:
-                            total_cost_basis += initial_val
-                            
-                    global_roi = (global_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
+                    global_pnl, global_roi, total_balance = user_stats_map.get(address, (0.0, 0.0, 0.0))
+                    value_total = user_values_map.get(address, 0.0)
+                    if value_total > 0:
+                        total_balance = value_total
                     
                     holder_info = {
                         "address": address,
@@ -944,7 +1257,8 @@ async def get_market_holders(
                         "market_pnl": market_pnl,
                         "market_roi": market_roi,
                         "global_pnl": global_pnl,
-                        "global_roi": global_roi
+                        "global_roi": global_roi,
+                        "total_balance": total_balance
                     }
                     
                     if holder.get("outcomeIndex") == 0:

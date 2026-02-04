@@ -161,7 +161,7 @@ function App() {
                                             }`}
                                     >
                                         <Activity className={`w-5 h-5 ${activeTab === 'stats' ? 'text-purple-400' : 'opacity-70'}`} />
-                                        <span className="font-semibold">Price Movement</span>
+                                        <span className="font-semibold">Price Analysis</span>
                                         {activeTab === 'stats' && (
                                             <div className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-purple-400 rounded-full" />
                                         )}

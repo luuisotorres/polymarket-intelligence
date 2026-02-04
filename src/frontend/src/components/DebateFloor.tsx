@@ -13,6 +13,7 @@ interface AgentConfig {
     devils_advocate: boolean;
     crypto_macro_analyst: boolean;
     time_decay_analyst: boolean;
+    top_traders_analyst: boolean;
 }
 
 interface DebateResponse {
@@ -50,6 +51,13 @@ const AGENTS = [
         description: 'Searches for latest news and events'
     },
     {
+        key: 'top_traders_analyst' as keyof AgentConfig,
+        label: 'Top Traders Analyst',
+        emoji: '🐋',
+        color: 'orange',
+        description: 'Evaluates top traders and flow signals'
+    },
+    {
         key: 'crypto_macro_analyst' as keyof AgentConfig,
         label: 'Crypto/Macro Analyst',
         emoji: '📈',
@@ -78,6 +86,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
         devils_advocate: true,
         crypto_macro_analyst: true,
         time_decay_analyst: true,
+        top_traders_analyst: true,
     });
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -158,7 +167,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                         Active Agents
                     </h3>
                     <span className="text-xs text-gray-500">
-                        {enabledCount}/5 enabled • Moderator always active
+                        {enabledCount}/{AGENTS.length} enabled • Moderator always active
                     </span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -170,6 +179,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                             green: { bg: 'bg-green-500', border: 'border-green-500/50', text: 'text-green-400' },
                             yellow: { bg: 'bg-yellow-500', border: 'border-yellow-500/50', text: 'text-yellow-400' },
                             red: { bg: 'bg-red-500', border: 'border-red-500/50', text: 'text-red-400' },
+                            orange: { bg: 'bg-orange-500', border: 'border-orange-500/50', text: 'text-orange-400' },
                         };
                         const colorClasses = colorMap[agent.color] ?? colorMap.blue;
 
@@ -249,6 +259,8 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                                 ? 'bg-cyan-900/20 border-cyan-500/30 ml-2 mr-10'
                                 : msg.agent === 'Generalist Expert'
                                     ? 'bg-green-900/20 border-green-500/30 ml-4 mr-8'
+                                    : msg.agent === 'Top Traders Analyst'
+                                        ? 'bg-orange-900/20 border-orange-500/30 ml-6 mr-6'
                                     : msg.agent === "Devil's Advocate"
                                         ? 'bg-red-900/20 border-red-500/30 ml-8 mr-4'
                                         : msg.agent === 'Crypto/Macro Analyst'
@@ -262,6 +274,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                                 {msg.agent === 'Statistics Expert' && '📊'}
                                 {msg.agent === 'Time Decay Analyst' && '⏰'}
                                 {msg.agent === 'Generalist Expert' && '🌍'}
+                                {msg.agent === 'Top Traders Analyst' && '🐋'}
                                 {msg.agent === "Devil's Advocate" && '😈'}
                                 {msg.agent === 'Crypto/Macro Analyst' && '📈'}
                                 {msg.agent === 'Moderator' && '👨‍⚖️'}
@@ -269,6 +282,7 @@ const DebateFloor: React.FC<DebateFloorProps> = ({ marketId }) => {
                             <span className={`font-bold ${msg.agent === 'Statistics Expert' ? 'text-blue-400' :
                                 msg.agent === 'Time Decay Analyst' ? 'text-cyan-400' :
                                     msg.agent === 'Generalist Expert' ? 'text-green-400' :
+                                        msg.agent === 'Top Traders Analyst' ? 'text-orange-400' :
                                         msg.agent === "Devil's Advocate" ? 'text-red-400' :
                                             msg.agent === 'Crypto/Macro Analyst' ? 'text-yellow-400' :
                                                 'text-purple-400'

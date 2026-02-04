@@ -100,6 +100,20 @@ Comprehensive price statistics including:
 
 ## Updates
 
+### February 4, 2026
+
+#### Whale Behavioral Tagging & Intelligence
+Introduced a sophisticated behavioral analysis system for whale traders. The system now automatically tags wallets based on historical performance and current balance tiers, providing immediate context on the expertise and capital behind every large order.
+
+- **Performance Tiers**: Professional classification (e.g., "Top Performer", "Massive Winner") based on aggregate P&L.
+- **Capitalization Tiers**: Real-time balance monitoring to identify "Whale" vs "Institutional" scale capital.
+- **Visual Sentiment**: Enhanced real-time BULLISH/BEARISH indicators for all whale movements.
+
+#### AI Debate Floor Refinements
+Optimized the multi-agent orchestration layer for the AI Debate Floor, resulting in more consistent reasoning and refined final verdicts. Added a new Agent to analyze Top Holders's positions and track record.
+
+---
+
 ### February 3, 2026
 
 #### User Analytics Dashboard

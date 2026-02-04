@@ -52,3 +52,6 @@ inspect_clob.py
 
 # Packaged skills (keep source in .agent/skills/)
 *.skill
+
+# Personal / Local only
+private/
