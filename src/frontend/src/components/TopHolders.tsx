@@ -129,7 +129,9 @@ export function TopHolders() {
         queryKey: ['holders', selectedMarket?.id],
         queryFn: () => fetchHolders(selectedMarket!.id),
         enabled: !!selectedMarket?.id,
-        refetchInterval: 60000
+        staleTime: 2 * 60 * 1000,       // 2 min — skip refetch on tab switch
+        refetchInterval: 60_000,
+        placeholderData: (prev) => prev, // keep previous data while refetching
     })
 
     if (!selectedMarket) return null

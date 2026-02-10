@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.backend.cache import user_stats_cache
 from src.backend.database import get_db
 from src.backend.models import AppState, Market
 from src.backend.polymarket.client import polymarket_client
@@ -821,7 +822,7 @@ async def get_market_trades(
     min_volume: float = 100.0,
     limit: int = 2000,
     days: int = Query(default=7, ge=1, le=30),
-    include_user_stats: bool = Query(default=True),
+    include_user_stats: bool = Query(default=False),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1013,65 +1014,96 @@ async def get_market_trades(
             }
 
             if addresses:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    semaphore = asyncio.Semaphore(10)
+                # Check cache first — only fetch stats for uncached addresses
+                cached_map, uncached_addresses = user_stats_cache.get_many(addresses)
+                logger.info(
+                    f"User stats cache: {len(cached_map)} hits, {len(uncached_addresses)} misses"
+                )
 
-                    async def fetch_user_stats(address: str):
-                        async with semaphore:
-                            positions = []
-                            closed_positions = []
-                            value_total = 0.0
+                stats_map: dict[str, dict] = {
+                    addr: {
+                        "global_pnl": entry.global_pnl,
+                        "global_roi": entry.global_roi,
+                        "total_balance": entry.total_balance,
+                    }
+                    for addr, entry in cached_map.items()
+                }
 
-                            try:
-                                response = await client.get(
-                                    "https://data-api.polymarket.com/positions",
-                                    params={"user": address, "limit": "500"},
-                                )
-                                if response.status_code == 200:
-                                    positions = response.json()
-                            except Exception:
+                if uncached_addresses:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        semaphore = asyncio.Semaphore(10)
+
+                        async def fetch_user_stats(address: str):
+                            async with semaphore:
                                 positions = []
-
-                            try:
-                                response = await client.get(
-                                    "https://data-api.polymarket.com/closed-positions",
-                                    params={"user": address, "limit": "500"},
-                                )
-                                if response.status_code == 200:
-                                    closed_positions = response.json()
-                            except Exception:
                                 closed_positions = []
-
-                            try:
-                                response = await client.get(
-                                    "https://data-api.polymarket.com/value",
-                                    params={"user": address},
-                                )
-                                if response.status_code == 200:
-                                    payload = response.json()
-                                    if isinstance(payload, list) and payload:
-                                        value_total = _parse_float(payload[0].get("value") or 0)
-                            except Exception:
                                 value_total = 0.0
 
-                        positions = positions if isinstance(positions, list) else []
-                        closed_positions = closed_positions if isinstance(closed_positions, list) else []
-                        global_pnl, global_roi, total_balance = _compute_global_stats(
-                            positions,
-                            closed_positions,
-                        )
-                        if value_total > 0:
-                            total_balance = value_total
-                        return address, {
-                            "global_pnl": global_pnl,
-                            "global_roi": global_roi,
-                            "total_balance": total_balance,
-                        }
+                                try:
+                                    response = await client.get(
+                                        "https://data-api.polymarket.com/positions",
+                                        params={"user": address, "limit": "500"},
+                                    )
+                                    if response.status_code == 200:
+                                        positions = response.json()
+                                except Exception:
+                                    positions = []
 
-                    stats_results = await asyncio.gather(
-                        *[fetch_user_stats(address) for address in addresses]
-                    )
-                    stats_map = {address: stats for address, stats in stats_results}
+                                try:
+                                    response = await client.get(
+                                        "https://data-api.polymarket.com/closed-positions",
+                                        params={"user": address, "limit": "500"},
+                                    )
+                                    if response.status_code == 200:
+                                        closed_positions = response.json()
+                                except Exception:
+                                    closed_positions = []
+
+                                try:
+                                    response = await client.get(
+                                        "https://data-api.polymarket.com/value",
+                                        params={"user": address},
+                                    )
+                                    if response.status_code == 200:
+                                        payload = response.json()
+                                        if isinstance(payload, list) and payload:
+                                            value_total = _parse_float(
+                                                payload[0].get("value") or 0
+                                            )
+                                except Exception:
+                                    value_total = 0.0
+
+                            positions = positions if isinstance(positions, list) else []
+                            closed_positions = (
+                                closed_positions
+                                if isinstance(closed_positions, list)
+                                else []
+                            )
+                            global_pnl, global_roi, total_balance = _compute_global_stats(
+                                positions,
+                                closed_positions,
+                            )
+                            if value_total > 0:
+                                total_balance = value_total
+
+                            # Store in cache for future requests
+                            user_stats_cache.set(
+                                address,
+                                global_pnl=global_pnl,
+                                global_roi=global_roi,
+                                total_balance=total_balance,
+                            )
+                            return address, {
+                                "global_pnl": global_pnl,
+                                "global_roi": global_roi,
+                                "total_balance": total_balance,
+                            }
+
+                        fresh_results = await asyncio.gather(
+                            *[fetch_user_stats(addr) for addr in uncached_addresses]
+                        )
+                        for addr, stats in fresh_results:
+                            stats_map[addr] = stats
 
                 for trade in whale_trades:
                     stats = stats_map.get(trade.get("address"))
@@ -1137,118 +1169,139 @@ async def get_market_holders(
 
             # Deduplicate by address for fetching stats, but keep references
             unique_addresses = {h["proxyWallet"] for h in all_holders if h.get("proxyWallet")}
-            
-            # 2. Fetch User Positions Concurrently (Limit concurrency if needed)
-            # We'll fetch for ALL unique addresses found in the top lists 
-            # (usually data-api returns top ~20-50 per token, so total ~100 max)
-            
-            async def fetch_user_payload(identifier: str):
-                positions = []
-                closed_positions = []
+
+            # ── 2. Check cache first ─────────────────────────────────────
+            cached_map, uncached_addresses = user_stats_cache.get_many(unique_addresses)
+            logger.info(
+                f"Holders stats cache: {len(cached_map)} hits, "
+                f"{len(uncached_addresses)} misses"
+            )
+
+            # Pre-populate global stats from cache
+            global_stats_map: dict[str, tuple[float, float, float]] = {
+                addr: (entry.global_pnl, entry.global_roi, entry.total_balance)
+                for addr, entry in cached_map.items()
+            }
+
+            # We always need positions for market-specific PnL, so fetch
+            # positions for ALL addresses, but only fetch closed-positions
+            # and value for uncached ones (those are only needed for global stats).
+            user_positions_map: dict[str, list] = {}
+
+            async def fetch_positions_only(address: str):
+                """Lightweight call — only /positions (for market PnL)."""
+                try:
+                    r = await client.get(
+                        "https://data-api.polymarket.com/positions",
+                        params={"user": address, "limit": "500"},
+                    )
+                    if r.status_code == 200:
+                        return address, r.json() if isinstance(r.json(), list) else []
+                except Exception:
+                    pass
+                return address, []
+
+            async def fetch_full_stats(address: str):
+                """Heavy call — /positions + /closed-positions + /value."""
+                positions: list = []
+                closed_positions: list = []
                 value_total = 0.0
 
                 try:
                     r = await client.get(
                         "https://data-api.polymarket.com/positions",
-                        params={"user": identifier, "limit": "500"} # fetch enough positions
+                        params={"user": address, "limit": "500"},
                     )
                     if r.status_code == 200:
-                        positions = r.json()
+                        positions = r.json() if isinstance(r.json(), list) else []
                 except Exception:
-                    positions = []
+                    pass
 
                 try:
                     r = await client.get(
                         "https://data-api.polymarket.com/closed-positions",
-                        params={"user": identifier, "limit": "500"}
+                        params={"user": address, "limit": "500"},
                     )
                     if r.status_code == 200:
-                        closed_positions = r.json()
+                        closed_positions = r.json() if isinstance(r.json(), list) else []
                 except Exception:
-                    closed_positions = []
+                    pass
 
                 try:
                     r = await client.get(
                         "https://data-api.polymarket.com/value",
-                        params={"user": identifier},
+                        params={"user": address},
                     )
                     if r.status_code == 200:
                         payload = r.json()
                         if isinstance(payload, list) and payload:
                             value_total = _parse_float(payload[0].get("value") or 0)
                 except Exception:
-                    value_total = 0.0
+                    pass
 
-                return (
-                    positions if isinstance(positions, list) else [],
-                    closed_positions if isinstance(closed_positions, list) else [],
-                    value_total,
+                global_pnl, global_roi, _ = _compute_global_stats(
+                    positions, closed_positions
+                )
+                total_balance = value_total if value_total > 0 else 0.0
+
+                # Store in cache for future requests
+                user_stats_cache.set(
+                    address,
+                    global_pnl=global_pnl,
+                    global_roi=global_roi,
+                    total_balance=total_balance,
                 )
 
-            async def fetch_user_stats(address):
-                try:
-                    positions, closed_positions, value_total = await fetch_user_payload(address)
-                    stats = _compute_global_stats(
-                        positions,
-                        closed_positions,
-                    )
-                    return address, positions, stats, value_total
-                except Exception:
-                    return address, [], (0.0, 0.0, 0.0), 0.0
+                return address, positions, (global_pnl, global_roi, total_balance)
 
-            # Batch requests to avoid rate limits? 
-            # Polymarket is usually lenient, but let's be safe with max 20 parallel at a time if list is huge?
-            # For now, asyncio.gather all should be fine for < 50 addrs.
-            stats_tasks = [fetch_user_stats(addr) for addr in unique_addresses]
-            user_positions_results = await asyncio.gather(*stats_tasks)
-            
-            # Map address -> positions, stats
-            user_positions_map = {
-                addr: pos for addr, pos, _, _ in user_positions_results if pos is not None
-            }
-            user_stats_map = {
-                addr: stats for addr, _, stats, _ in user_positions_results if stats is not None
-            }
-            user_values_map = {
-                addr: value for addr, _, _, value in user_positions_results if value is not None
-            }
-            
+            # ── 3. Fan-out only the calls we actually need ───────────────
+            cached_addresses = set(cached_map.keys())
+
+            # For cached addresses: only fetch /positions (1 call each)
+            pos_tasks = [fetch_positions_only(a) for a in cached_addresses]
+            # For uncached addresses: full 3-call fan-out
+            full_tasks = [fetch_full_stats(a) for a in uncached_addresses]
+
+            pos_results = await asyncio.gather(*pos_tasks)
+            full_results = await asyncio.gather(*full_tasks)
+
+            for addr, positions in pos_results:
+                user_positions_map[addr] = positions
+
+            for addr, positions, stats in full_results:
+                user_positions_map[addr] = positions
+                global_stats_map[addr] = stats
+
+            # ── 4. Build holder response lists ───────────────────────────
             yes_holders = []
             no_holders = []
-            
+
             for token_data in data:
                 token_holders = token_data.get("holders", [])
-                
-                # Check outcome index from the *token* context if simple holder logic fails
-                # Actually data structure is List[TokenHolderInfo], where each item has holders list
-                # We need to know which token corresponds to YES/NO.
-                # Usually we rely on outcomeIndex inside holder object or order.
-                
+
                 for holder in token_holders:
                     address = holder.get("proxyWallet")
                     if not address:
                         continue
-                        
+
                     positions = user_positions_map.get(address, [])
-                    
-                    # Calculate Stats
+
+                    # Market-specific PnL/ROI
                     market_pnl = 0.0
                     market_roi = 0.0
-                    
-                    # Market specific PnL/ROI
-                    # Find position matching this market by conditionId (market.id = position.conditionId)
-                    target_pos = next((p for p in positions if p.get("conditionId") == condition_id), None)
+                    target_pos = next(
+                        (p for p in positions if p.get("conditionId") == condition_id),
+                        None,
+                    )
                     if target_pos:
                         market_pnl = float(target_pos.get("cashPnl") or 0)
-                        # percentPnl is already a percentage (e.g., -51.109 for -51.109%)
                         market_roi = float(target_pos.get("percentPnl") or 0)
-                    
-                    # Global Stats
-                    global_pnl, global_roi, total_balance = user_stats_map.get(address, (0.0, 0.0, 0.0))
-                    value_total = user_values_map.get(address, 0.0)
-                    if value_total > 0:
-                        total_balance = value_total
-                    
+
+                    # Global stats (from cache or freshly computed)
+                    global_pnl, global_roi, total_balance = global_stats_map.get(
+                        address, (0.0, 0.0, 0.0)
+                    )
+
                     holder_info = {
                         "address": address,
                         "name": holder.get("name") or holder.get("pseudonym") or "Unknown",
@@ -1258,9 +1311,9 @@ async def get_market_holders(
                         "market_roi": market_roi,
                         "global_pnl": global_pnl,
                         "global_roi": global_roi,
-                        "total_balance": total_balance
+                        "total_balance": total_balance,
                     }
-                    
+
                     if holder.get("outcomeIndex") == 0:
                         yes_holders.append(holder_info)
                     else:
@@ -1269,10 +1322,10 @@ async def get_market_holders(
             # Sort by amount desc
             yes_holders.sort(key=lambda x: x["amount"], reverse=True)
             no_holders.sort(key=lambda x: x["amount"], reverse=True)
-            
+
             return {
                 "yes_holders": yes_holders[:20],
-                "no_holders": no_holders[:20]
+                "no_holders": no_holders[:20],
             }
 
     except Exception as e:
